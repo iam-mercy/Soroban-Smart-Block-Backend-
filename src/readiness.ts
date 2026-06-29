@@ -1,10 +1,11 @@
-export type DependencyName = 'db' | 'cache' | 'indexer' | 'coldStorage';
+export type DependencyName = 'db' | 'cache' | 'indexer' | 'coldStorage' | 'worker';
 
 const _state: Record<DependencyName, boolean> = {
   db: false,
   cache: false,
   indexer: false,
   coldStorage: false,
+  worker: false,
 };
 
 export function markReady(dep: DependencyName): void {

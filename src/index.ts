@@ -27,6 +27,8 @@ import yogaHandler from './graphql';
 import { warmTokenMetadataCache } from './indexer/token-metadata';
 import { cacheConnect, cacheClose, isCacheReady } from './cache';
 import { markReady, markNotReady, getReadinessState, isFullyReady } from './readiness';
+import { getIndexerStatus } from './indexer-state';
+import { isBridgeWorkerRunning } from './bridge-tracker';
 import { errorHandler } from './middleware/errorHandler';
 import { requestContext } from './middleware/requestContext';
 import { apiKeyAuth } from './middleware/apiKeyAuth';
@@ -136,11 +138,98 @@ app.get(
   }),
 );
 
+/**
+ * @swagger
+ * /health:
+ *   get:
+ *     summary: Liveness probe
+ *     description: |
+ *       Returns the process health status including dependency states.
+ *       Responds with 200 as long as the process is alive, even if
+ *       some dependencies are unhealthy. Use `/readyz` for readiness.
+ *
+ *       **Response fields:**
+ *       - `status` — `"ok"` or `"shutting_down"`
+ *       - `network` — active Stellar network name
+ *       - `uptime` — process uptime in seconds
+ *       - `dependencies` — per-service readiness: `db`, `cache`, `indexer`, `coldStorage`, `worker`
+ *       - `indexer` — `{ healthy, failureReason? }`
+ *       - `worker` — `{ running }`
+ *     tags: [Health]
+ *     responses:
+ *       200:
+ *         description: Process is alive
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: ok
+ *                 network:
+ *                   type: string
+ *                   example: testnet
+ *                 uptime:
+ *                   type: number
+ *                 dependencies:
+ *                   type: object
+ *                   properties:
+ *                     db:
+ *                       type: boolean
+ *                     cache:
+ *                       type: boolean
+ *                     indexer:
+ *                       type: boolean
+ *                     coldStorage:
+ *                       type: boolean
+ *                     worker:
+ *                       type: boolean
+ *                 indexer:
+ *                   type: object
+ *                   properties:
+ *                     healthy:
+ *                       type: boolean
+ *                     failureReason:
+ *                       type: string
+ *                 worker:
+ *                   type: object
+ *                   properties:
+ *                     running:
+ *                       type: boolean
+ *       503:
+ *         description: Process is shutting down
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: shutting_down
+ */
 app.get('/health', (_req, res) => {
   if (isShuttingDown) {
     return res.status(503).json({ status: 'shutting_down' });
   }
-  res.json({ status: 'ok', network: config.stellarNetwork });
+
+  const dependencies = getReadinessState();
+  const indexerStatus = getIndexerStatus();
+  const workerRunning = isBridgeWorkerRunning();
+
+  res.json({
+    status: 'ok',
+    network: config.stellarNetwork,
+    uptime: process.uptime(),
+    dependencies,
+    indexer: {
+      healthy: indexerStatus.healthy,
+      ...(indexerStatus.failureReason && { failureReason: indexerStatus.failureReason }),
+    },
+    worker: {
+      running: workerRunning,
+    },
+  });
 });
 
 app.get('/readyz', (_req, res) => {
@@ -357,6 +446,7 @@ async function main() {
 
     try {
       startBridgeWorker();
+      markReady('worker');
     } catch (err) {
       logger.warn('Bridge worker failed to start', { error: String(err) });
     }

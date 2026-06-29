@@ -52,6 +52,7 @@ describe('/readyz — initial state', () => {
     expect(dependencies.cache).toBe(false);
     expect(dependencies.indexer).toBe(false);
     expect(dependencies.coldStorage).toBe(false);
+    expect(dependencies.worker).toBe(false);
   });
 });
 
@@ -62,13 +63,14 @@ describe('/readyz — partial readiness', () => {
     const mod = await freshReadiness();
     mod.markReady('db');
     mod.markReady('cache');
-    // indexer and coldStorage still false
+    // indexer, coldStorage, and worker still false
     const res = await request(buildReadyzApp(mod)).get('/readyz');
     expect(res.status).toBe(503);
     expect(res.body.dependencies.db).toBe(true);
     expect(res.body.dependencies.cache).toBe(true);
     expect(res.body.dependencies.indexer).toBe(false);
     expect(res.body.dependencies.coldStorage).toBe(false);
+    expect(res.body.dependencies.worker).toBe(false);
   });
 });
 
@@ -81,6 +83,7 @@ describe('/readyz — fully ready', () => {
     mod.markReady('cache');
     mod.markReady('indexer');
     mod.markReady('coldStorage');
+    mod.markReady('worker');
     const res = await request(buildReadyzApp(mod)).get('/readyz');
     expect(res.status).toBe(200);
     expect(res.body.status).toBe('ready');
@@ -92,12 +95,14 @@ describe('/readyz — fully ready', () => {
     mod.markReady('cache');
     mod.markReady('indexer');
     mod.markReady('coldStorage');
+    mod.markReady('worker');
     const res = await request(buildReadyzApp(mod)).get('/readyz');
     const { dependencies } = res.body as { dependencies: Record<DependencyName, boolean> };
     expect(dependencies.db).toBe(true);
     expect(dependencies.cache).toBe(true);
     expect(dependencies.indexer).toBe(true);
     expect(dependencies.coldStorage).toBe(true);
+    expect(dependencies.worker).toBe(true);
   });
 });
 
@@ -110,6 +115,7 @@ describe('/readyz — shutdown', () => {
     mod.markReady('cache');
     mod.markReady('indexer');
     mod.markReady('coldStorage');
+    mod.markReady('worker');
     const res = await request(buildReadyzApp(mod, /* shutting= */ true)).get('/readyz');
     expect(res.status).toBe(503);
     expect(res.body.reason).toBe('shutting_down');
@@ -130,6 +136,7 @@ describe('/readyz — readiness transitions', () => {
     mod.markReady('cache');
     mod.markReady('indexer');
     mod.markReady('coldStorage');
+    mod.markReady('worker');
 
     res = await request(app).get('/readyz');
     expect(res.status).toBe(200);
@@ -141,6 +148,7 @@ describe('/readyz — readiness transitions', () => {
     mod.markReady('cache');
     mod.markReady('indexer');
     mod.markReady('coldStorage');
+    mod.markReady('worker');
 
     const app = buildReadyzApp(mod);
 
@@ -156,6 +164,7 @@ describe('/readyz — readiness transitions', () => {
     expect(res.body.dependencies.db).toBe(true);
     expect(res.body.dependencies.cache).toBe(true);
     expect(res.body.dependencies.coldStorage).toBe(true);
+    expect(res.body.dependencies.worker).toBe(true);
   });
 
   it('recovers to ready after a dep is restored', async () => {
@@ -164,6 +173,7 @@ describe('/readyz — readiness transitions', () => {
     mod.markReady('cache');
     mod.markReady('indexer');
     mod.markReady('coldStorage');
+    mod.markReady('worker');
 
     const app = buildReadyzApp(mod);
 
